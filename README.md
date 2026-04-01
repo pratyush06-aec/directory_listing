@@ -1,75 +1,64 @@
-# Stellar Business Directory (Next-Gen V16)
+<div align="center">
+  <img src="./public/logo.png" alt="Stellar Business Directory Logo" width="200" style="border-radius: 50%; box-shadow: 0 0 20px rgba(0,242,254,0.4);"/>
+  <h1>Stellar Business Directory (Soroban V16)</h1>
+  <p><strong>A Next-Generation Decentralized On-Chain Utility</strong></p>
+</div>
 
-A decentralized Web3 application built on the **Stellar Soroban Smart Contract** network to create, verify, manage, and query a global directory of businesses. 
+# 👋 Welcome to the Stellar Business Directory
+🚀 Unleashing the power of Web3, this project leverages the **Stellar Soroban Smart Contract** network to maintain a global, immutable directory of businesses. It is built natively on decentralized principles rather than a traditional centralized data stack.
 
-## 🌌 Next Generation UI
-This application features a fully custom-built, high-performance Dark Mode UI that uses native Math and CSS to compute 3D tilts and dynamic "heat glow" spotlight effects—*no cumbersome animation libraries required*. 
+# 🧑‍💻 Tech Stack
+- 🧑‍🎓 **Smart Contract Layer**: Deployed natively via Soroban for immutable CRUD and network state modifications.
+- 🌱 **Integration Layer**: Utilizes `@stellar/stellar-sdk` and `@stellar/freighter-api` to orchestrate secure user signatures for all on-chain verification mechanisms.
+- 💬 **Architectural Flow**: Designed to act as a direct, trustless peer-to-peer verification hub.
+- 🚀 **Next-Gen Frontend**: A fully custom React 19 visual interface powered by Vite to display blockchain data streams.
 
-### Application Walkthrough
+# 🌐 Decentralized Features
 
-The project provides an immersive visual experience. Let's take a look:
+### **1. On-Chain Deployment**
+Interacting directly with Soroban smart contracts, users can deploy trustless profiles for newly verified businesses (Metadata, Location, Routing) and permanently anchor them onto the Stellar ledger.
 
-**1. Live UI Recording (Hover Effects & Heat Glow)**  
-![UI Recording](./public/demo.webp)  
-*Watch the hover-glow border effects follow the pointer alongside the 3D Perspective shifts!*
+### **2. Peer Consensus & Ratings**
+Leveraging decentralized peer verification parameters, any connected node/wallet can function as a *Rater*. Trust mechanics and deactivation overrides are embedded straight into the contract logic.
 
-**2. Preview Design Concept**  
+### **3. Live Network Terminal**
+To assist with blockchain transparency, the app features a built-in interactive JSON monitor styled like a classic hacker terminal payload system to live-stream blockchain transactions and node states.
+
+---
+
+### DApp UI Experience
+Though fundamentally a Web3 architecture, the frontend boasts a deeply polished spatial-web environment to interface with the smart contracts using pure CSS, 3D native browser tilt logic, and mouse-tracked neon gradients!
+
+**1. Live UI Recording (Hardware-Accelerated Tracking)**  
+![UI Web3 Session](./public/demo.webp)
+
+**2. Main Network Dashboard**  
 ![High Fidelity Preview](./public/preview.png)
 
 ---
 
-## 🛠️ Technology Stack
-- **Frontend Core**: React 19, Vite, Javascript
-- **Styling**: Pure CSS (Glassmorphism, CSS Custom Properties, Native 3D Transforms)
-- **Web3 Integration**: `@stellar/freighter-api`, `@stellar/stellar-sdk`
-
----
-
-## 🚀 Features
-
-### **1. 3D "Landing Page" Experience**
-The application now launches into an immersive, deep-space dark mode Splash Page. Hovering over the entry card will dynamically orient the element along an `X/Y` coordinate grid toward your mouse.
-
-### **2. Deploy & Manage Listings**
-Directly interacting with the Soroban smart contracts, you can:
-- Initialise a new business (Name, Category, Descriptions, Location, Site).
-- Perform on-chain updates to records.
-- Deactivate Profiles securely via owner authentication.
-
-### **3. Peer Verification & Rating**
-Any verified account on the network can run Verification algorithms to approve listings, and submit a 1-to-5 star rating representing the trustworthiness/quality of the business on the Stellar chain.
-
-### **4. "Hacker-Style" Network Terminal**
-Watch live JSON payloads and error outputs stream directly into the animated, mocked macOS terminal block to provide a seamless debugging experience natively inside the Web3 layout.
-
----
-
-## 💻 Getting Started
+# 🚀 Getting Started
 
 ### Prerequisites
-- [Node.js](https://nodejs.org/) matches `latest`
-- [Freighter Wallet](https://www.freighter.app/) Browser Extension
+- Node.js (matches `latest` stable build)
+- [Freighter Wallet](https://www.freighter.app/) Browser Extension (Configured to Stellar Testnet)
 
-### Installation
+### Initialization
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository_url>
+   git clone https://github.com/pratyush06-aec/directory_listing.git
    cd my-stellar-app
    ```
 
-2. **Install dependencies:**
+2. **Install node dependencies:**
    ```bash
    npm install
    ```
 
-3. **Start the Development Server:**
+3. **Ignite the Local Network:**
    ```bash
    npm run dev
    ```
 
-4. You can freely interact with the demo by accessing `http://localhost:5173`. Ensure your Freighter wallet is on the Stellar Testnet!
-
----
-
-*Authored by Antigravity advanced agent for Stellar Soroban V16 Protocol.*
+To explore the dApp locally, boot up `http://localhost:5173`. Ensure your Freighter extension is connected and correctly pointed to the network!
