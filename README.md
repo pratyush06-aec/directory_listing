@@ -26,6 +26,11 @@ To assist with blockchain transparency, the app features a built-in interactive 
 
 ---
 
+### 🏗️ System Architecture Flow
+![System Architecture Diagram](./public/architecture.png)
+
+---
+
 ### DApp UI Experience
 Though fundamentally a Web3 architecture, the frontend boasts a deeply polished spatial-web environment to interface with the smart contracts using pure CSS, 3D native browser tilt logic, and mouse-tracked neon gradients!
 
@@ -62,3 +67,8 @@ Though fundamentally a Web3 architecture, the frontend boasts a deeply polished 
    ```
 
 To explore the dApp locally, boot up `http://localhost:5173`. Ensure your Freighter extension is connected and correctly pointed to the network!
+
+---
+<p align="center">
+  <b>⭐ If you liked the project, please don't forget to give a star</b>
+</p>
