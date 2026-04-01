@@ -1,482 +1,370 @@
-import React, { useMemo, useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { checkConnection, createListing, updateListing, verifyListing, deactivateListing, rateListing, getListing, listAll } from "../lib/stellar.js";
 import "./App.css";
-import { checkConnection, addProduct, updateStock, updatePrice, discontinueProduct, getProduct, listProducts, getLowStock, getTotalValue } from "../lib/stellar.js";
-
-
-const initialForm = () => ({
-    id: "prod1",
-    owner: "",
-    name: "Sample Product",
-    sku: "SKU-001",
-    quantity: "10",
-    unitPrice: "1000",
-    category: "general",
-    quantityChange: "5",
-    isAddition: true,
-    newPrice: "1500",
-    lowStockThreshold: "5",
-});
-
-const safeStringify = (value) => {
-    if (typeof value === "string") return value;
-    return JSON.stringify(value, (_key, current) => {
-        if (typeof current === "bigint") return current.toString();
-        return current;
-    }, 2);
-};
 
 const toOutput = (value) => {
-    if (value == null) return "No data found";
     if (typeof value === "string") return value;
-    return safeStringify(value);
+    return JSON.stringify(value, null, 2);
 };
 
-const truncateAddr = (addr) => addr ? addr.slice(0, 8) + "..." + addr.slice(-4) : "";
+const initialForm = () => ({
+    id: "biz1",
+    owner: "",
+    name: "Stellar Nexus",
+    category: "technology",
+    description: "Next Generation Directory",
+    contact: "nexus@stellar.io",
+    website: "https://nexus.stellar.io",
+    location: "Decentralized City",
+    verifier: "",
+    rater: "",
+    rating: "5",
+});
 
-const parseNumericField = (value, fieldName) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < 0) {
-        throw new Error(`${fieldName} must be a valid non-negative number`);
-    }
-    return parsed;
-};
-
-const stroopsToXlm = (value) => {
-    try {
-        const raw = typeof value === "bigint" ? value : BigInt(value || 0);
-        const sign = raw < 0n ? "-" : "";
-        const absolute = raw < 0n ? -raw : raw;
-        const whole = absolute / 10000000n;
-        const fraction = String(absolute % 10000000n).padStart(7, "0").replace(/0+$/, "");
-        return `${sign}${whole}${fraction ? `.${fraction}` : ""}`;
-    } catch {
-        return String(value);
-    }
-};
-
-const buildWriteSummary = (actionName, txResult) => {
-    const status = txResult?.status || "PENDING";
-    const hash = txResult?.hash || txResult?.id || "N/A";
-    return {
-        type: "write",
-        action: actionName,
-        status,
-        hash,
-        ledger: txResult?.ledger ?? "N/A",
-        result: txResult?.resultMetaXdr ? "Transaction confirmed" : "Submitted",
-    };
-};
-
-const toFriendlyResult = (actionName, result) => {
-    if (actionName === "getTotalValue") {
-        return {
-            totalValueStroops: typeof result === "bigint" ? result.toString() : String(result),
-            totalValueXLM: stroopsToXlm(result),
-        };
-    }
-
-    if (actionName === "listProducts" || actionName === "getLowStock") {
-        const ids = Array.isArray(result) ? result : [];
-        return {
-            count: ids.length,
-            ids,
-        };
-    }
-
-    if (actionName === "getProduct") {
-        if (!result) return "Product not found";
-        return result;
-    }
-
-    return result;
-};
-
-const actionLabels = {
-    connect: "Connect Wallet",
-    addProduct: "Add Product",
-    updateStock: "Update Stock",
-    updatePrice: "Update Price",
-    discontinue: "Discontinue Product",
-    getProduct: "Get Product",
-    listProducts: "List Products",
-    getLowStock: "Low Stock Query",
-    getTotalValue: "Total Value Query",
-};
+const TABS = ["Create Listing", "Manage", "Browse"];
 
 export default function App() {
+    const [view, setView] = useState("landing");
     const [form, setForm] = useState(initialForm);
-    const [output, setOutput] = useState("Ready.");
-    const [walletState, setWalletState] = useState(null);
+    const [output, setOutput] = useState("System Ready.");
+    const [walletState, setWalletState] = useState("Wallet: not connected");
     const [isBusy, setIsBusy] = useState(false);
     const [loadingAction, setLoadingAction] = useState(null);
     const [status, setStatus] = useState("idle");
-    const [activeTab, setActiveTab] = useState("add");
+    const [activeTab, setActiveTab] = useState(0);
     const [confirmAction, setConfirmAction] = useState(null);
-    const [notice, setNotice] = useState({ type: "info", message: "Connect Freighter to begin." });
-    const [history, setHistory] = useState([]);
+    const confirmTimer = useRef(null);
+    const [connectedAddress, setConnectedAddress] = useState("");
+    const appRef = useRef(null);
 
-    const hasWallet = Boolean(walletState);
+    useEffect(() => () => { if (confirmTimer.current) clearTimeout(confirmTimer.current); }, []);
 
-    const dashboardStats = useMemo(() => {
-        return [
-            { label: "Wallet", value: hasWallet ? "Connected" : "Disconnected" },
-            { label: "Active Product", value: form.id || "-" },
-            { label: "Owner", value: form.owner ? truncateAddr(form.owner) : "-" },
-            { label: "Low Stock Alert", value: form.lowStockThreshold || "0" },
-        ];
-    }, [hasWallet, form.id, form.owner, form.lowStockThreshold]);
+    // Global mouse hook for heat effect
+    useEffect(() => {
+        const handleGlobalMouseMove = (e) => {
+            if (appRef.current) {
+                const rect = appRef.current.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                appRef.current.style.setProperty('--mouse-x', `${x}px`);
+                appRef.current.style.setProperty('--mouse-y', `${y}px`);
+            }
+        };
+        window.addEventListener("mousemove", handleGlobalMouseMove);
+        return () => window.removeEventListener("mousemove", handleGlobalMouseMove);
+    }, []);
 
     const setField = (event) => {
-        const { name, value, type, checked } = event.target;
-        setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+        const { name, value } = event.target;
+        setForm((prev) => ({ ...prev, [name]: value }));
     };
 
-    const pushHistory = (entry) => {
-        setHistory((prev) => [entry, ...prev].slice(0, 7));
-    };
-
-    const runAction = async (actionName, action) => {
+    const runAction = async (action) => {
         setIsBusy(true);
-        setLoadingAction(actionName);
-        setStatus("idle");
+        setStatus("loading");
         try {
-            const rawResult = await action();
-            const friendlyResult = toFriendlyResult(actionName, rawResult);
-            setOutput(toOutput(friendlyResult));
+            const result = await action();
+            setOutput(toOutput(result ?? "No data retrieved"));
             setStatus("success");
-            setNotice({ type: "success", message: `${actionLabels[actionName] || actionName} completed successfully.` });
-            pushHistory({
-                action: actionLabels[actionName] || actionName,
-                state: "success",
-                time: new Date().toLocaleTimeString(),
-            });
         } catch (error) {
             setOutput(error?.message || String(error));
             setStatus("error");
-            setNotice({ type: "error", message: error?.message || "Action failed" });
-            pushHistory({
-                action: actionLabels[actionName] || actionName,
-                state: "error",
-                time: new Date().toLocaleTimeString(),
-            });
         } finally {
             setIsBusy(false);
-            setLoadingAction(null);
         }
     };
 
-    const handleDestructive = (actionName, fn) => {
-        if (confirmAction === actionName) {
+    const withLoading = (key, fn) => async () => {
+        setLoadingAction(key);
+        await fn();
+        setLoadingAction(null);
+    };
+
+    const handleDestructive = (key, fn) => () => {
+        if (confirmAction === key) {
+            clearTimeout(confirmTimer.current);
             setConfirmAction(null);
             fn();
         } else {
-            setConfirmAction(actionName);
-            setTimeout(() => setConfirmAction(null), 3000);
+            setConfirmAction(key);
+            confirmTimer.current = setTimeout(() => setConfirmAction(null), 3000);
         }
     };
 
-    const onConnect = () => runAction("connect", async () => {
+    const onConnect = withLoading("connect", () => runAction(async () => {
         const user = await checkConnection();
         if (user) {
-            setWalletState(user.publicKey);
-            setForm((prev) => ({ ...prev, owner: user.publicKey }));
-            setNotice({ type: "success", message: "Wallet connected. Owner has been auto-filled." });
-        } else {
-            setWalletState(null);
-            setNotice({ type: "error", message: "Wallet not connected. Open Freighter and try again." });
+            setConnectedAddress(user.publicKey);
+            setForm((prev) => ({
+                ...prev,
+                owner: prev.owner || user.publicKey,
+                verifier: prev.verifier || user.publicKey,
+                rater: prev.rater || user.publicKey,
+            }));
         }
-        return user ? `Connected: ${user.publicKey}` : "Wallet: not connected";
-    });
+        const next = user ? `Wallet Connected: ${user.publicKey}` : "Wallet: not connected";
+        setWalletState(next);
+        return next;
+    }));
 
-    const validateCommon = () => {
-        if (!form.id.trim()) throw new Error("Product ID is required");
-        if (!form.owner.trim()) throw new Error("Owner address is required");
-        if (!form.owner.trim().startsWith("G")) {
-            throw new Error("Owner address should start with G");
-        }
+    const onCreate = withLoading("create", () => runAction(async () => createListing({
+        id: form.id.trim(),
+        owner: form.owner.trim(),
+        name: form.name.trim(),
+        category: form.category.trim(),
+        description: form.description.trim(),
+        contact: form.contact.trim(),
+        website: form.website.trim(),
+        location: form.location.trim(),
+    })));
+
+    const onUpdate = withLoading("update", () => runAction(async () => updateListing({
+        id: form.id.trim(),
+        owner: form.owner.trim(),
+        name: form.name.trim(),
+        description: form.description.trim(),
+        contact: form.contact.trim(),
+        website: form.website.trim(),
+    })));
+
+    const onVerify = withLoading("verify", () => runAction(async () => verifyListing({
+        id: form.id.trim(),
+        verifier: form.verifier.trim() || form.owner.trim(),
+    })));
+
+    const onDeactivate = handleDestructive("deactivate", withLoading("deactivate", () => runAction(async () => deactivateListing({
+        id: form.id.trim(),
+        owner: form.owner.trim(),
+    }))));
+
+    const onRate = withLoading("rate", () => runAction(async () => rateListing({
+        id: form.id.trim(),
+        rater: form.rater.trim() || form.owner.trim(),
+        rating: form.rating.trim(),
+    })));
+
+    const onGet = withLoading("get", () => runAction(async () => getListing(form.id.trim())));
+
+    const onList = withLoading("list", () => runAction(async () => listAll()));
+
+    const ratingNum = parseInt(form.rating, 10) || 0;
+    const isConnected = connectedAddress.length > 0;
+    const truncAddr = connectedAddress ? connectedAddress.slice(0, 6) + "..." + connectedAddress.slice(-4) : "";
+
+    const btnClass = (key, extra = "") => {
+        let cls = extra;
+        if (loadingAction === key) cls += " loading";
+        return cls.trim();
     };
 
-    const onAddProduct = () => runAction("addProduct", async () => {
-        validateCommon();
-        if (!form.name.trim()) throw new Error("Product name is required");
-        parseNumericField(form.quantity, "Quantity");
-        parseNumericField(form.unitPrice, "Unit price");
+    const outputIsEmpty = output === "System Ready.";
 
-        const result = await addProduct({
-            id: form.id.trim(),
-            owner: form.owner.trim(),
-            name: form.name.trim(),
-            sku: form.sku.trim(),
-            quantity: form.quantity.trim(),
-            unitPrice: form.unitPrice.trim(),
-            category: form.category.trim() || "general",
-        });
-
-        return buildWriteSummary("addProduct", result);
-    });
-
-    const onUpdateStock = () => runAction("updateStock", async () => {
-        validateCommon();
-        const qty = parseNumericField(form.quantityChange, "Quantity change");
-        if (qty <= 0) throw new Error("Quantity change must be greater than zero");
-
-        const result = await updateStock({
-            id: form.id.trim(),
-            owner: form.owner.trim(),
-            quantityChange: form.quantityChange.trim(),
-            isAddition: form.isAddition,
-        });
-
-        return buildWriteSummary("updateStock", result);
-    });
-
-    const onUpdatePrice = () => runAction("updatePrice", async () => {
-        validateCommon();
-        parseNumericField(form.newPrice, "New price");
-
-        const result = await updatePrice({
-            id: form.id.trim(),
-            owner: form.owner.trim(),
-            newPrice: form.newPrice.trim(),
-        });
-
-        return buildWriteSummary("updatePrice", result);
-    });
-
-    const onDiscontinue = () => runAction("discontinue", async () => {
-        validateCommon();
-        const result = await discontinueProduct({
-            id: form.id.trim(),
-            owner: form.owner.trim(),
-        });
-
-        return buildWriteSummary("discontinue", result);
-    });
-
-    const onGetProduct = () => runAction("getProduct", async () => getProduct(form.id.trim()));
-    const onListProducts = () => runAction("listProducts", async () => listProducts());
-    const onGetLowStock = () => runAction("getLowStock", async () => {
-        parseNumericField(form.lowStockThreshold, "Low stock threshold");
-        return getLowStock(form.lowStockThreshold.trim());
-    });
-    const onGetTotalValue = () => runAction("getTotalValue", async () => getTotalValue());
-
-    const btnClass = (actionName, base) =>
-        `${base}${loadingAction === actionName ? " btn-loading" : ""}`;
-
-    const tabs = [
-        { key: "add", label: "Add Product" },
-        { key: "stock", label: "Stock & Price" },
-        { key: "queries", label: "Queries" },
-    ];
-
-    return (
-        <main className="app">
-            <header className="top-shell">
-                <section className="hero">
-                    <p className="kicker">Soroban Inventory Console</p>
-                    <h1>Smart Contract Operations</h1>
-                    <p className="subtitle">
-                        Production-style interface for your contract: create products, update stock and price,
-                        track low inventory, and monitor total value.
-                    </p>
-                </section>
-
-                <div className="wallet-panel">
-                    <div className="wallet-head">
-                        <span className={`status-dot ${walletState ? "connected" : "disconnected"}`}></span>
-                        <p className="wallet-title">Wallet</p>
+    // Render Landing
+    if (view === "landing") {
+        return (
+            <div className="landing-page" ref={appRef}>
+                <div className="ambient-glow"></div>
+                <div className="landing-card card-3d" onMouseMove={(e) => {
+                     const rect = e.currentTarget.getBoundingClientRect();
+                     const x = e.clientX - rect.left - rect.width/2;
+                     const y = e.clientY - rect.top - rect.height/2;
+                     e.currentTarget.style.transform = `perspective(1000px) rotateX(${-y/10}deg) rotateY(${x/10}deg) scale3d(1.02, 1.02, 1.02)`;
+                }} onMouseLeave={(e) => {
+                     e.currentTarget.style.transform = `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`;
+                }}>
+                    <div className="card-border-glow"></div>
+                    <div className="card-content">
+                        <div className="badge-pill pulse">STELLAR SOROBAN V16</div>
+                        <h1 className="glitch-text" data-text="Business Directory">Business Directory</h1>
+                        <p className="hero-subtext">A next-generation decentralized hub. Create, verify, and rate businesses across the Stellar network with frictionless Web3 architecture.</p>
+                        <div className="cta-group">
+                            <button className="btn-primary glow-effect" onClick={() => setView("app")}>
+                                Launch Application
+                            </button>
+                            <a href="https://stellar.org" target="_blank" rel="noreferrer" className="btn-ghost">Read Docs</a>
+                        </div>
                     </div>
-                    <p className="wallet-line">
-                        {walletState ? `Connected: ${truncateAddr(walletState)}` : "Not connected"}
-                    </p>
-                    <button type="button" className={btnClass("connect", "btn btn-connect")} onClick={onConnect} disabled={isBusy}>
-                        {walletState ? "Refresh Connection" : "Connect Freighter"}
-                    </button>
-                    {walletState && (
-                        <button
-                            type="button"
-                            className="btn btn-subtle"
-                            disabled={isBusy}
-                            onClick={() => setForm((prev) => ({ ...prev, owner: walletState }))}
-                        >
-                            Use Connected Address
-                        </button>
-                    )}
                 </div>
-            </header>
+            </div>
+        );
+    }
 
-            <section className="stats-grid" aria-label="Dashboard summary">
-                {dashboardStats.map((stat) => (
-                    <article key={stat.label} className="stat-card">
-                        <p className="stat-label">{stat.label}</p>
-                        <p className="stat-value">{stat.value}</p>
-                    </article>
-                ))}
-            </section>
+    // Render Main App
+    return (
+        <div className="app-container" ref={appRef}>
+            <div className="ambient-glow"></div>
+            <nav className="top-nav glass-panel heat-card">
+                <div className="card-border-glow"></div>
+                <div className="brand" onClick={() => setView("landing")}>
+                    <div className="logo-orb"></div>
+                    <span style={{ position: 'relative', zIndex: 2 }}>Stellar Directory</span>
+                </div>
+                <div className="wallet-status" style={{ position: 'relative', zIndex: 2 }}>
+                    {isConnected ? (
+                        <div className="wallet-pill active">
+                            <span className="dot connected"></span>
+                            <span className="addr">{truncAddr}</span>
+                        </div>
+                    ) : (
+                        <div className="wallet-pill offline">
+                            <span className="dot disconnected"></span>
+                            <span className="addr">Offline</span>
+                        </div>
+                    )}
+                    <button className={btnClass("connect", "btn-outline glow-effect")} onClick={onConnect} disabled={isBusy}>
+                        {isConnected ? "Reconnect" : "Connect Wallet"}
+                    </button>
+                </div>
+            </nav>
 
-            <section className={`notice notice-${notice.type}`}>
-                <p>{notice.message}</p>
-            </section>
-
-            <div className="workspace-grid">
-                <section className="panel panel-main">
-                    <nav className="tab-nav" aria-label="Action groups">
-                        {tabs.map((t) => (
+            <main className="main-content grid-layout">
+                {/* Left Column: Actions */}
+                <div className="left-panel">
+                    <div className="tabs-container glass-panel heat-card">
+                        <div className="card-border-glow"></div>
+                        {TABS.map((tab, i) => (
                             <button
-                                key={t.key}
+                                key={tab}
                                 type="button"
-                                className={`tab-btn${activeTab === t.key ? " active" : ""}`}
-                                onClick={() => setActiveTab(t.key)}
+                                className={`tab-btn ${activeTab === i ? "active" : ""}`}
+                                onClick={() => setActiveTab(i)}
+                                style={{ position: 'relative', zIndex: 2 }}
                             >
-                                {t.label}
+                                {tab}
                             </button>
                         ))}
-                    </nav>
+                    </div>
 
-                    {activeTab === "add" && (
-                        <section className="card">
-                            <div className="card-header">
-                                <h2>Add Product</h2>
-                                <p>Create a new product entry on-chain.</p>
-                            </div>
-                            <div className="form-grid cols-2">
-                                <div className="form-group">
-                                    <label htmlFor="entryId">Product ID</label>
-                                    <input id="entryId" name="id" value={form.id} onChange={setField} maxLength={32} />
-                                    <span className="helper">Contract key symbol, keep short and unique</span>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="owner">Owner Address</label>
-                                    <input id="owner" name="owner" value={form.owner} onChange={setField} placeholder="G..." />
-                                    <span className="helper">Stellar public key</span>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="name">Product Name</label>
-                                    <input id="name" name="name" value={form.name} onChange={setField} />
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="sku">SKU</label>
-                                    <input id="sku" name="sku" value={form.sku} onChange={setField} />
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="quantity">Quantity</label>
-                                    <input id="quantity" name="quantity" value={form.quantity} onChange={setField} type="number" min="0" />
-                                    <span className="helper">u32 value</span>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="unitPrice">Unit Price (stroops)</label>
-                                    <input id="unitPrice" name="unitPrice" value={form.unitPrice} onChange={setField} type="number" min="0" />
-                                    <span className="helper">i128 value</span>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="category">Category Symbol</label>
-                                    <input id="category" name="category" value={form.category} onChange={setField} />
-                                </div>
-                            </div>
-                            <div className="actions">
-                                <button type="button" className={btnClass("addProduct", "btn btn-primary")} onClick={onAddProduct} disabled={isBusy}>Add Product</button>
-                                <button type="button" className={btnClass("getProduct", "btn btn-outline")} onClick={onGetProduct} disabled={isBusy}>Get Product</button>
-                                <button type="button" className={btnClass("listProducts", "btn btn-outline")} onClick={onListProducts} disabled={isBusy}>List Products</button>
-                            </div>
-                        </section>
-                    )}
-
-                    {activeTab === "stock" && (
-                        <section className="card stock-card">
-                            <div className="card-header">
-                                <h2>Stock & Price Control</h2>
-                                <p>Owner-signed updates for inventory and pricing.</p>
-                            </div>
-                            <div className="form-grid cols-3">
-                                <div className="form-group">
-                                    <label htmlFor="quantityChange">Quantity Change</label>
-                                    <input id="quantityChange" name="quantityChange" value={form.quantityChange} onChange={setField} type="number" min="0" />
-                                </div>
-                                <div className="checkbox-row">
-                                    <input type="checkbox" id="isAddition" name="isAddition" checked={form.isAddition} onChange={setField} />
-                                    <span>{form.isAddition ? "Addition mode" : "Removal mode"}</span>
-                                </div>
-                                <div className="form-group">
-                                    <label htmlFor="newPrice">New Price (stroops)</label>
-                                    <input id="newPrice" name="newPrice" value={form.newPrice} onChange={setField} type="number" min="0" />
-                                </div>
-                            </div>
-                            <div className="actions">
-                                <button type="button" className={btnClass("updateStock", "btn btn-primary")} onClick={onUpdateStock} disabled={isBusy}>Update Stock</button>
-                                <button type="button" className={btnClass("updatePrice", "btn btn-outline")} onClick={onUpdatePrice} disabled={isBusy}>Update Price</button>
-                                <button
-                                    type="button"
-                                    className={btnClass("discontinue", `btn btn-danger-outline${confirmAction === "discontinue" ? " btn-confirm-pulse" : ""}`)}
-                                    onClick={() => handleDestructive("discontinue", onDiscontinue)}
-                                    disabled={isBusy}
-                                >
-                                    {confirmAction === "discontinue" ? "Click Again To Confirm" : "Discontinue Product"}
-                                </button>
-                            </div>
-                        </section>
-                    )}
-
-                    {activeTab === "queries" && (
-                        <section className="card">
-                            <div className="card-header">
-                                <h2>Read Queries</h2>
-                                <p>Inspect current state without writing on-chain.</p>
-                            </div>
-                            <div className="queries-grid">
-                                <div className="query-item">
-                                    <div className="form-group">
-                                        <label htmlFor="lowStockThreshold">Low Stock Threshold</label>
-                                        <input id="lowStockThreshold" name="lowStockThreshold" value={form.lowStockThreshold} onChange={setField} type="number" min="0" />
+                    <div className="control-panel glass-panel heat-card">
+                       <div className="card-border-glow"></div>
+                        {activeTab === 0 && (
+                            <div className="form-wrapper slide-in">
+                                <h2 className="panel-title">Deploy Listing</h2>
+                                <div className="input-grid">
+                                    <div className="input-group">
+                                        <label>Listing ID</label>
+                                        <input name="id" value={form.id} onChange={setField} className="neon-input" />
                                     </div>
-                                    <button type="button" className={btnClass("getLowStock", "btn btn-outline")} onClick={onGetLowStock} disabled={isBusy}>Get Low Stock</button>
+                                    <div className="input-group">
+                                        <label>Owner Address</label>
+                                        <input name="owner" value={form.owner} onChange={setField} placeholder="G..." className="neon-input" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Business Name</label>
+                                        <input name="name" value={form.name} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Category</label>
+                                        <input name="category" value={form.category} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group full">
+                                        <label>Description</label>
+                                        <textarea name="description" rows="2" value={form.description} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Contact</label>
+                                        <input name="contact" value={form.contact} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group full">
+                                        <label>Location Map</label>
+                                        <input name="location" value={form.location} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group full">
+                                        <label>Website Link</label>
+                                        <input name="website" value={form.website} onChange={setField} className="neon-input" />
+                                    </div>
                                 </div>
-                                <div className="query-item">
-                                    <p className="helper helper-strong">Total inventory value includes only non-discontinued products.</p>
-                                    <button type="button" className={btnClass("getTotalValue", "btn btn-outline")} onClick={onGetTotalValue} disabled={isBusy}>Get Total Value</button>
+                                <div className="action-row">
+                                    <button className={btnClass("create", "btn-primary full-width glow-effect")} onClick={onCreate} disabled={isBusy}>Initialize Listing</button>
+                                    <button className={btnClass("update", "btn-outline full-width")} onClick={onUpdate} disabled={isBusy}>Update Record</button>
                                 </div>
                             </div>
-                        </section>
-                    )}
-                </section>
-
-                <aside className="panel panel-side">
-                    <section className="output-terminal">
-                        <div className="terminal-bar">
-                            <span className="terminal-dot red"></span>
-                            <span className="terminal-dot yellow"></span>
-                            <span className="terminal-dot green"></span>
-                            <span className="terminal-title">latest-result.json</span>
-                        </div>
-                        <div className={`terminal-body output-${status}`}>
-                            {output === "Ready." ? (
-                                <p className="empty-state">Run any action to see decoded results here.</p>
-                            ) : (
-                                <pre id="output">{output}</pre>
-                            )}
-                        </div>
-                    </section>
-
-                    <section className="activity-card">
-                        <div className="card-header card-header-compact">
-                            <h2>Recent Activity</h2>
-                        </div>
-                        {history.length === 0 ? (
-                            <p className="empty-state">No actions yet.</p>
-                        ) : (
-                            <ul className="history-list">
-                                {history.map((entry, index) => (
-                                    <li key={`${entry.action}-${entry.time}-${index}`} className="history-item">
-                                        <span className={`history-pill ${entry.state}`}>{entry.state}</span>
-                                        <span className="history-action">{entry.action}</span>
-                                        <span className="history-time">{entry.time}</span>
-                                    </li>
-                                ))}
-                            </ul>
                         )}
-                    </section>
-                </aside>
-            </div>
-        </main>
+
+                        {activeTab === 1 && (
+                            <div className="form-wrapper slide-in">
+                                <h2 className="panel-title">Manage Operations</h2>
+                                <div className="input-grid">
+                                    <div className="input-group full">
+                                        <label>Listing ID</label>
+                                        <input name="id" value={form.id} onChange={setField} className="neon-input" />
+                                    </div>
+                                    <div className="input-group full">
+                                        <label>Verifier Address</label>
+                                        <input name="verifier" value={form.verifier} onChange={setField} placeholder="G..." className="neon-input" />
+                                        <button className={btnClass("verify", "btn-outline mt-sm full-width")} onClick={onVerify} disabled={isBusy}>Run Verification</button>
+                                    </div>
+                                    <div className="separator"></div>
+                                    <div className="input-group">
+                                        <label>Rater Address</label>
+                                        <input name="rater" value={form.rater} onChange={setField} placeholder="G..." className="neon-input" />
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Score (1-5)</label>
+                                        <div className="star-rating">
+                                            {[1, 2, 3, 4, 5].map((s) => (
+                                                <span key={s} className={`star ${s <= ratingNum ? "active" : ""}`}
+                                                    onClick={() => setForm((prev) => ({ ...prev, rating: String(s) }))}>
+                                                    ✦
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="input-group full">
+                                         <button className={btnClass("rate", "btn-outline full-width")} onClick={onRate} disabled={isBusy}>Submit Rating</button>
+                                    </div>
+                                    <div className="separator"></div>
+                                    <div className="input-group full">
+                                        <button className={btnClass("deactivate", "btn-danger full-width")} onClick={onDeactivate} disabled={isBusy && loadingAction !== "deactivate"}>
+                                            {confirmAction === "deactivate" ? "Confirm Deletion" : "Deactivate Profile"}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 2 && (
+                            <div className="form-wrapper slide-in">
+                                <h2 className="panel-title">Network Query</h2>
+                                <div className="input-grid">
+                                    <div className="input-group full">
+                                        <label>Query Listing ID</label>
+                                        <div className="search-bar">
+                                            <input name="id" value={form.id} onChange={setField} className="neon-input" placeholder="Enter ID to index..." />
+                                            <button className={btnClass("get", "btn-primary inline-btn glow-effect")} onClick={onGet} disabled={isBusy}>Fetch</button>
+                                        </div>
+                                    </div>
+                                    <div className="input-group full mt-md">
+                                        <button className={btnClass("list", "btn-outline full-width")} onClick={onList} disabled={isBusy}>Index All Public Records</button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Column: Console / Output */}
+                <div className="right-panel">
+                    <div className={`console-window glass-panel heat-card status-${status}`}>
+                         <div className="card-border-glow"></div>
+                         <div className="console-header">
+                             <div className="mac-dots">
+                                 <span></span><span></span><span></span>
+                             </div>
+                             <span className="console-title">NETWORK_TERMINAL // OUT</span>
+                         </div>
+                         <div className="console-body">
+                             {outputIsEmpty ? (
+                                 <div className="console-empty">
+                                     <span className="blinking-cursor">_</span> Waiting for network events...
+                                 </div>
+                             ) : (
+                                 <pre className="json-output">{output}</pre>
+                             )}
+                         </div>
+                    </div>
+                </div>
+            </main>
+        </div>
     );
 }
