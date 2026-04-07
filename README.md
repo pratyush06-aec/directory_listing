@@ -4,6 +4,8 @@
   <p><strong>A Next-Generation Decentralized On-Chain Utility</strong></p>
 </div>
 
+CONTRACT_ID = "CBRZQH6LCPYXSX6CRCJCSEZE7QFM2MXUDZMJVLQ2EEGYOM2JLGCHAJUX"
+
 # 👋 Welcome to the Stellar Business Directory
 🚀 Unleashing the power of Web3, this project leverages the **Stellar Soroban Smart Contract** network to maintain a global, immutable directory of businesses. It is built natively on decentralized principles rather than a traditional centralized data stack.
 
